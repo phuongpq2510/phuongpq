@@ -763,59 +763,37 @@ def FindOppositeBranch( NearEndBrHnd, OppositeBrList, TempBrList, TempListSize, 
             TempBrList[TempListSize] = nBranchHnd
     return ListSize
 
-def getAllBranchesAndBus():
-    """
-    Find all branches and bus in the system
-        Args :
-            None
-
-        Returns:
-             br [] : all branches handle
-             bus[][]: bus correspond to branches
-
-        Raises:
-            OlrxAPIException
-   """
-    bus = []
-    br = []
-    # TC_LINE
-    hndBr = c_int(0)
-    while ( OLRXAPI_OK == OlxAPI.GetEquipment(c_int(TC_LINE), byref(hndBr) )) :
-        bus.append(getBusByBranch(hndBr,TC_LINE))
-        br.append(hndBr.value)
-    # TC_SCAP
-    hndBr = c_int(0)
-    while ( OLRXAPI_OK ==OlxAPI.GetEquipment(c_int(TC_SCAP), byref(hndBr) )) :
-        bus.append(getBusByBranch(hndBr,TC_SCAP))
-        br.append(hndBr.value)
-    # TC_PS
-    hndBr = c_int(0)
-    while ( OLRXAPI_OK == OlxAPI.GetEquipment(c_int(TC_PS), byref(hndBr) )) :
-        bus.append(getBusByBranch(hndBr,TC_PS))
-        br.append(hndBr.value)
-    # TC_SWITCH
-    hndBr = c_int(0)
-    while ( OLRXAPI_OK == OlxAPI.GetEquipment(c_int(TC_SWITCH), byref(hndBr) )) :
-        bus.append(getBusByBranch(hndBr,TC_SWITCH))
-        br.append(hndBr.value)
-    # TC_XFMR
-    hndBr = c_int(0)
-    while ( OLRXAPI_OK == OlxAPI.GetEquipment(c_int(TC_XFMR), byref(hndBr) )) :
-        bus.append(getBusByBranch(hndBr,TC_XFMR))
-        br.append(hndBr.value)
-    # TC_XFMR3
-    hndBr = c_int(0)
-    while ( OLRXAPI_OK == OlxAPI.GetEquipment(c_int(TC_XFMR3), byref(hndBr) )) :
-        bus.append(getBusByBranch(hndBr,TC_XFMR3))
-        br.append(hndBr.value)
-    #
-    return br,bus
-
-def getBusByBranch(hndBr,TC_Type):
+def getBusByBranch(hndBr):
     """
     Find bus of branch
         Args :
             hndBr :  branch handle
+
+        Returns:
+            bus[nBus1Hnd,nBus2Hnd, (nBus3Hnd)]
+
+        Raises:
+            OlrxAPIException
+    """
+    bres = []
+    b1 = getEquipementData([hndBr],[BR_nBus1Hnd],VT_INTEGER)[0][0]
+    bres.append(b1)
+    #
+    b2 = getEquipementData([hndBr],[BR_nBus2Hnd],VT_INTEGER)[0][0]
+    bres.append(b2)
+    try:
+        b3 = getEquipementData([hndBr],[BR_nBus3Hnd],VT_INTEGER)[0][0]
+        bres.append(b3)
+    except:
+        pass
+    #
+    return bres
+
+def getBusByEquipement(ehnd,TC_Type):
+    """
+    Find bus of equipement
+        Args :
+            ehnd :  equipement handle
             TC_Type: TC_LINE | TC_SCAP | TC_PS | TC_SWITCH | TC_XFMR | TC_XFMR3
 
         Returns:
@@ -845,14 +823,11 @@ def getBusByBranch(hndBr,TC_Type):
         raise OlrxAPIException("Error TC_Type")
     #
     busRes = []
-    hndBus1 = c_int(0)
     for b1 in busHnd:
-        if ( OLRXAPI_FAILURE == OlxAPI.GetData( hndBr, c_int(b1), byref(hndBus1) ) ) :
-            raise OlxAPI.OlxAPIException(OlxAPI.ErrorString())
-        #
-        busRes.append(hndBus1.value)
+        busRes.append(getEquipementData([ehnd],[b1],VT_INTEGER)[0][0])
     #
     return busRes
+
 
 def getEquipementData(ehnd,paraCode,VT_type):
     """
@@ -893,12 +868,12 @@ def getEquipementData(ehnd,paraCode,VT_type):
 
 def getBusEquipmentData(bhnd,paraCode,VT_type):
     """
-    Retrieves the handle of all equipment of a given type []
+    Retrieves the handle of all equipment of a given type [] (paraCode)
     that is attached to bus [].
 
         Args :
             bhnd :  [bus handle]
-            nParaCode [] = code data (BR_nHandle,...)
+            nParaCode [] = code data (BR_nHandle,GE_nBusHnd...)
             VT_type = VT_STRING | VT_DOUBLE | VT_INTEGER|
                       VT_ARRAYSTRING | VT_ARRAYDOUBLE | VT_ARRAYINT
 
@@ -948,50 +923,54 @@ def getEquipementHandle(TC_type):
         res.append(hndBr.value)
     return res
 
-def branchIsLineComponent(hndBr):
+def branchIsInType(hndBr,typeConsi):
     """
-    test if branch is: Line, Switch, Serie Capa, Serie Reactor
+    test if branch is in type defined by typeConsi:  [TC_LINE,TC_SWITCH,TC_SCAP, TC_PS, TC_XFMR,TC_XFMR3]
                        Close switches are tested
     """
-    type_consi = [TC_LINE,TC_SWITCH,TC_SCAP]
     da1 =  getEquipementData([hndBr],[BR_nType,BR_nInService],VT_INTEGER)
     type1 = da1[0][0]
     inSer = da1[1][0]
     if inSer ==0:
         return False
     #
-    if type1 not in type_consi:
+    if type1 not in typeConsi:
         return False
-    if type1 ==TC_SWITCH:# if Switch
+
+    if (TC_SWITCH in typeConsi) and (type1 ==TC_SWITCH):# if Switch
         swHnd = getEquipementData([hndBr],[BR_nHandle],VT_INTEGER)[0][0]
         status =  getEquipementData([swHnd],[SW_nStatus],VT_INTEGER)[0][0]
         if status==0: #OPEN
             return False
     return True
 
-def branchesNextToBranch(hndBr):
+def branchesNextToBranch(hndBr,typeConsi):
     """
-    return list branches next to a branch
-    All taps are ignored. Close switches are included
+    Purpose: Find list branches next to a branch
+             All taps are ignored. Close switches are included
 
-    Args :
+        Args :
             hndBr :  branch handle
+            typeConsi: type of branche considered
+                       [TC_LINE,TC_SWITCH,TC_SCAP, TC_PS, TC_XFMR]
 
-    returns :
-        nTap: nTap of Bus2 (of hndBr)
-        br_Self: branch inverse (by bus) of hndBr
-        br_res []: list branch next
+        returns :
+            nTap: nTap of Bus2 (of hndBr)
+            br_Self: branch inverse (by bus) of hndBr
+            br_res []: list branch next
                                               | br_res
                                               |
                                   hndBr       |      br_res
-    Illustration:       Bus1-----------------Bus2------------
+        Illustration:       Bus1-----------------Bus2------------
                                   br_Self     |
                                               |
                                               | br_res
+        Raises:
+            OlrxAPIException
     """
     br_Self = -1
     br_res = []
-    # bus 2
+    #
     b2 = getEquipementData([hndBr],[BR_nBus2Hnd],VT_INTEGER)[0][0]
     # get nTap
     nTap = getEquipementData([b2],[BUS_nTapBus],VT_INTEGER)[0][0]
@@ -1002,7 +981,7 @@ def branchesNextToBranch(hndBr):
     #
     allBr = []
     for br1 in allBr0:
-        if branchIsLineComponent(br1): #test branch is Line/Switch/SerieCapa(reactor), Switch close
+        if branchIsInType(br1,typeConsi): #test branch is in type considered, Switch close
             allBr.append(br1)
     #
     equiHnd_all = getEquipementData(allBr,[BR_nHandle],VT_INTEGER)[0]
@@ -1015,24 +994,30 @@ def branchesNextToBranch(hndBr):
     #
     return nTap,br_Self,br_res
 
-def lineComponents(hndBr):
+def lineComponents(hndBr,typeConsi): # Without XFMR3
     """
     Purpose: find list branches of line (start by hndBr)
             All taps are ignored. Close switches are included
 
-    Args :
+        Args :
             hndBr :  branch handle (start)
+            typeConsi: type considered as component of line
+            [TC_LINE,TC_SWITCH,TC_SCAP,TC_PS,TC_XFMR]
 
-    returns :
-        list of branches
+        returns :
+            list of branches
+
+        Raises:
+            OlrxAPIException
     """
     brA_res = [[hndBr]] # result
-    #
     bra = [hndBr]# for each direction
+
     while True:
         bra_in = []
         for br1 in bra:
-            nTap,br_Self,br_res = branchesNextToBranch(br1)
+            #
+            nTap,br_Self,br_res = branchesNextToBranch(br1, typeConsi)
             if nTap ==0 or len(br_res)==0: # finish
                 for i in range(len(brA_res)):
                     if br1 in brA_res[i]:
@@ -1065,3 +1050,58 @@ def lineComponents(hndBr):
         bra.extend(bra_in)
     #
     return brA_res
+
+def getRemoteTerminals(hndBr):
+    """
+    Purpose: Find all remote end of a branch
+            All taps are ignored. Close switches are included
+
+        Args :
+            hndBr :  branch handle
+
+        returns :
+            bus_res [] list of terminal bus
+
+        Raises:
+            OlrxAPIException
+    """
+    bus_res = set()
+    setEqui = set()
+    equiHnd1 = getEquipementData([hndBr],[BR_nHandle],VT_INTEGER)[0][0]
+    setEqui.add(equiHnd1)
+    #
+    b123 = getBusByBranch(hndBr)
+    b23 = b123[1:]
+    #
+    while True:
+        bn23_in = []
+        for b2 in b23:
+            nTap = getEquipementData([b2],[BUS_nTapBus],VT_INTEGER)[0][0]
+            allBr = getBusEquipmentData([b2],[TC_BRANCH],VT_INTEGER)[0][0]
+            if nTap==0 or len(allBr)==1:
+                bus_res.add(b2)
+            else:
+                for br1 in allBr:
+                    equi1 = getEquipementData([br1],[BR_nHandle],VT_INTEGER)[0][0]
+                    if (equi1 not in setEqui):
+                        inSer1 = getEquipementData([br1],[BR_nInService],VT_INTEGER)[0][0]
+                        type1 =  getEquipementData([br1],[BR_nType],VT_INTEGER)[0][0]
+                        statusSW = 1
+                        if type1 == TC_SWITCH: # if Switch
+                            swHnd = getEquipementData([br1],[BR_nHandle],VT_INTEGER)[0][0]
+                            statusSW =  getEquipementData([swHnd],[SW_nStatus],VT_INTEGER)[0][0]
+                        #
+                        if statusSW==0 and len(allBr)==2: # finish
+                            bus_res.add(b2)
+                        elif (inSer1==1) and (statusSW==1):
+                            setEqui.add(equi1)
+                            b123 = getBusByBranch(br1)
+                            bn23_in.extend(b123[1:])
+        #update b23
+        b23 = []
+        b23.extend(bn23_in)
+        if len(b23)==0:
+            break
+    return list(bus_res)
+
+
